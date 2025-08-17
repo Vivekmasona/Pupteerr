@@ -20,27 +20,33 @@ app.get("/extract", async (req, res) => {
 
     const page = await browser.newPage();
 
-    await page.goto(url, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000, // 60s
+    // sabhi requests collect karne ke liye array
+    const collectedLinks = [];
+
+    page.on("request", (req) => {
+      const link = req.url();
+      collectedLinks.push(link);
     });
 
-    // thoda wait JS load hone ka
-    await new Promise(r => setTimeout(r, 8000));
+    // page open karo
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
 
-    // full page html lelo
-    const html = await page.content();
-
-    // regex se sirf googlevideo.com links nikaal lo
-    const matches = [...html.matchAll(/https:\/\/redirector\.googlevideo\.com\/videoplayback\?[^"]+/g)];
-    const videoLinks = matches.map(m => m[0]);
+    // 30 sec tak ruk ke sab requests capture karo
+    await new Promise(r => setTimeout(r, 30000));
 
     await browser.close();
 
+    // duplicates hatao aur index number add karo
+    const uniqueLinks = [...new Set(collectedLinks)];
+    const numbered = uniqueLinks.map((l, i) => ({ no: i + 1, link: l }));
+
     res.json({
       url,
-      count: videoLinks.length,
-      videoLinks
+      total: numbered.length,
+      links: numbered
     });
 
   } catch (err) {
