@@ -19,29 +19,32 @@ app.get("/extract", async (req, res) => {
     });
 
     const page = await browser.newPage();
+    let playbackUrl: string | null = null;
 
-    await page.goto(url, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000, // 60s
+    // Network response listener
+    page.on("response", response => {
+      const reqUrl = response.url();
+      // YouTube / GoogleVideo ke typical video URLs
+      if (
+        !playbackUrl &&
+        (reqUrl.includes("googlevideo.com/videoplayback") ||
+         reqUrl.match(/r\d+---/)) // r5---, r6--- etc
+      ) {
+        playbackUrl = reqUrl;
+      }
     });
 
-    // thoda wait JS load hone ka
-    await new Promise(r => setTimeout(r, 8000));
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
 
-    // full page html lelo
-    const html = await page.content();
-
-    // regex se sirf googlevideo.com links nikaal lo
-    const matches = [...html.matchAll(/https:\/\/redirector\.googlevideo\.com\/videoplayback\?[^"]+/g)];
-    const videoLinks = matches.map(m => m[0]);
+    // Thoda wait, network requests capture karne ke liye
+    await page.waitForTimeout(5000);
 
     await browser.close();
 
-    res.json({
-      url,
-      count: videoLinks.length,
-      videoLinks
-    });
+    if (!playbackUrl) return res.status(404).json({ error: "Playback URL not found" });
+
+    // Result me sirf playback URL
+    res.send(playbackUrl);
 
   } catch (err) {
     if (browser) await browser.close();
@@ -49,4 +52,4 @@ app.get("/extract", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Server running http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server running at http://localhost:${PORT}`));
