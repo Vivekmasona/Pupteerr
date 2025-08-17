@@ -5,7 +5,6 @@ import puppeteer from "puppeteer-core";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// API: Extract video download links
 app.get("/extract", async (req, res) => {
   const { url } = req.query;
 
@@ -14,24 +13,28 @@ app.get("/extract", async (req, res) => {
   }
 
   try {
-    // Launch browser in serverless-friendly mode
     const browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
+      timeout: 0 // unlimited
     });
 
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "networkidle2" });
 
-    // Wait for download buttons
-    await page.waitForSelector("#720dl", { timeout: 10000 });
-    await page.waitForSelector("#360dl", { timeout: 10000 });
+    // Navigation with bigger timeout
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000, // 60 seconds
+    });
 
-    // Extract links
-    const link720 = await page.$eval("#720dl", el => el.href);
-    const link360 = await page.$eval("#360dl", el => el.href);
+    // extra wait for JS-rendered content
+    await page.waitForTimeout(5000);
+
+    // Ensure buttons exist
+    const link720 = await page.$eval("#720dl", el => el.href).catch(() => null);
+    const link360 = await page.$eval("#360dl", el => el.href).catch(() => null);
 
     await browser.close();
 
