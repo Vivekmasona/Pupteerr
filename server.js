@@ -21,15 +21,10 @@ app.get("/extract", async (req, res) => {
     const page = await browser.newPage();
     let playbackUrl: string | null = null;
 
-    // Network response listener
+    // Listen for all network responses
     page.on("response", response => {
       const reqUrl = response.url();
-      // YouTube / GoogleVideo ke typical video URLs
-      if (
-        !playbackUrl &&
-        (reqUrl.includes("googlevideo.com/videoplayback") ||
-         reqUrl.match(/r\d+---/)) // r5---, r6--- etc
-      ) {
+      if (!playbackUrl && reqUrl.includes("videoplayback?expire=")) {
         playbackUrl = reqUrl;
       }
     });
@@ -43,12 +38,11 @@ app.get("/extract", async (req, res) => {
 
     if (!playbackUrl) return res.status(404).json({ error: "Playback URL not found" });
 
-    // Result me sirf playback URL
-    res.send(playbackUrl);
+    res.json({ playbackUrl });
 
   } catch (err) {
     if (browser) await browser.close();
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
