@@ -1,36 +1,31 @@
 import express from "express";
-import cors from "cors";
-import puppeteer from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-
-async function launchBrowser() {
-  const executablePath = await chromium.executablePath;
-
-  return puppeteer.launch({
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    executablePath,
-    headless: chromium.headless,
-  });
-}
-
 app.get("/", (req, res) => {
-  res.send("✅ Puppeteer server running on Render!");
+  res.send("✅ Puppeteer running on Render");
 });
 
 app.get("/extract", async (req, res) => {
   const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "url required" });
+  if (!url) return res.status(400).json({ error: "URL required" });
+
   let browser;
   try {
-    browser = await launchBrowser();
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
+    });
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+    await page.goto(url, { waitUntil: "networkidle2" });
+
     const html = await page.content();
     res.json({ url, html });
   } catch (err) {
@@ -41,5 +36,5 @@ app.get("/extract", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server started on http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
