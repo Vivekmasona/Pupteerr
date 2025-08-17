@@ -1,11 +1,17 @@
 {
-  "name": "pupteerr-extractor",
+  "name": "puppeteer-server",
   "version": "1.0.0",
+  "description": "Puppeteer on Render with Chromium",
   "main": "server.js",
-  "type": "module",
-  "scripts": { "start": "node server.js" },
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
     "express": "^4.18.2",
-    "puppeteer": "^22.6.0"
+    "puppeteer-core": "^22.6.5",
+    "@sparticuz/chromium": "^127.0.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
