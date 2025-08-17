@@ -20,34 +20,34 @@ app.get("/extract", async (req, res) => {
 
     const page = await browser.newPage();
 
-    // sabhi requests collect karne ke liye array
-    const collectedLinks = [];
+    let resolved = false;
 
-    page.on("request", (req) => {
-      const link = req.url();
-      collectedLinks.push(link);
+    page.on("request", async (reqEvent) => {
+      const link = reqEvent.url();
+      if (
+        link.includes("videoplayback") &&
+        link.includes("expire=") &&
+        !resolved
+      ) {
+        resolved = true;
+        await browser.close();
+        return res.json({ link });
+      }
     });
 
-    // page open karo
     await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
 
-    // 30 sec tak ruk ke sab requests capture karo
-    await new Promise(r => setTimeout(r, 30000));
-
-    await browser.close();
-
-    // duplicates hatao aur index number add karo
-    const uniqueLinks = [...new Set(collectedLinks)];
-    const numbered = uniqueLinks.map((l, i) => ({ no: i + 1, link: l }));
-
-    res.json({
-      url,
-      total: numbered.length,
-      links: numbered
-    });
+    // agar 20 sec tak koi link nahi mila to timeout
+    setTimeout(async () => {
+      if (!resolved) {
+        resolved = true;
+        await browser.close();
+        res.status(404).json({ error: "videoplayback link not found" });
+      }
+    }, 20000);
 
   } catch (err) {
     if (browser) await browser.close();
@@ -55,4 +55,6 @@ app.get("/extract", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Server running http://localhost:${PORT}`));
+app.listen(PORT, () =>
+  console.log(`✅ Server running http://localhost:${PORT}`)
+);
