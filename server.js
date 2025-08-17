@@ -7,49 +7,46 @@ const PORT = process.env.PORT || 3000;
 
 app.get("/extract", async (req, res) => {
   const { url } = req.query;
+  if (!url) return res.status(400).json({ error: "Valid URL required" });
 
-  if (!url) {
-    return res.status(400).json({ error: "Valid URL is required" });
-  }
-
+  let browser;
   try {
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
-      timeout: 0 // unlimited
     });
 
     const page = await browser.newPage();
 
-    // Navigation with bigger timeout
     await page.goto(url, {
       waitUntil: "domcontentloaded",
-      timeout: 60000, // 60 seconds
+      timeout: 60000, // 60s
     });
 
-    // extra wait for JS-rendered content
-    await page.waitForTimeout(5000);
+    // thoda wait JS load hone ka
+    await new Promise(r => setTimeout(r, 8000));
 
-    // Ensure buttons exist
-    const link720 = await page.$eval("#720dl", el => el.href).catch(() => null);
-    const link360 = await page.$eval("#360dl", el => el.href).catch(() => null);
+    // full page html lelo
+    const html = await page.content();
+
+    // regex se sirf googlevideo.com links nikaal lo
+    const matches = [...html.matchAll(/https:\/\/redirector\.googlevideo\.com\/videoplayback\?[^"]+/g)];
+    const videoLinks = matches.map(m => m[0]);
 
     await browser.close();
 
     res.json({
       url,
-      links: {
-        "720p": link720,
-        "360p": link360,
-      },
+      count: videoLinks.length,
+      videoLinks
     });
+
   } catch (err) {
+    if (browser) await browser.close();
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Server running at http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Server running http://localhost:${PORT}`));
