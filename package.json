@@ -1,13 +1,26 @@
 {
-  "name": "puppeteer-extractor",
+  "name": "videoplayback-extractor",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Extract videoplayback URLs from dynamic pages using Puppeteer",
+  "main": "index.ts",
   "scripts": {
-    "start": "node server.js"
+    "start": "ts-node index.ts",
+    "dev": "ts-node-dev --respawn --transpile-only index.ts"
   },
   "dependencies": {
-    "@sparticuz/chromium": "^127.0.0",
     "express": "^4.18.2",
-    "puppeteer-core": "^22.15.0"
-  }
+    "puppeteer-core": "^21.4.0",
+    "@sparticuz/chromium": "^20.0.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
