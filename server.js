@@ -20,6 +20,7 @@ app.get("/extract", async (req, res) => {
 
     const page = await browser.newPage();
 
+    let resolved = false;
     let links = [];
 
     page.on("request", async (reqEvent) => {
@@ -27,17 +28,23 @@ app.get("/extract", async (req, res) => {
 
       // ✅ YouTube videoplayback
       if (link.includes("videoplayback") && link.includes("expire=")) {
-        links.push({ platform: "youtube", link });
+        if (!links.includes(link)) links.push(link);
       }
 
-      // ✅ Instagram CDN video/audio
+      // ✅ Instagram reels/posts mp4 CDN
       if (
         (link.includes("cdninstagram.com") || link.includes("fbcdn.net")) &&
-        (link.includes(".mp4") || link.includes(".m4a"))
+        link.includes(".mp4")
       ) {
-        // clean query (remove bytestart / byteend)
         link = link.replace(/&bytestart=\d+&byteend=\d+/g, "");
-        links.push({ platform: "instagram", link });
+        if (!links.includes(link)) links.push(link);
+      }
+
+      // ✅ Agar 4 ho gaye to close aur return
+      if (links.length >= 4 && !resolved) {
+        resolved = true;
+        await browser.close();
+        return res.json({ links: links.slice(0, 4) });
       }
     });
 
@@ -46,16 +53,18 @@ app.get("/extract", async (req, res) => {
       timeout: 30000,
     });
 
-    // Wait 5s to collect all media requests
+    // Timeout: agar 10s tak 4 link na mile to jo bhi mila bhej do
     setTimeout(async () => {
-      await browser.close();
-      if (links.length > 0) {
-        res.json({ success: true, links });
-      } else {
-        res.status(404).json({ error: "No video/audio links found" });
+      if (!resolved) {
+        resolved = true;
+        await browser.close();
+        if (links.length > 0) {
+          res.json({ links: links.slice(0, 4) });
+        } else {
+          res.status(404).json({ error: "Video link not found" });
+        }
       }
-    }, 5000);
-
+    }, 10000);
   } catch (err) {
     if (browser) await browser.close();
     res.status(500).json({ error: err.message });
