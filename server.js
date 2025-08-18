@@ -11,7 +11,6 @@ app.get("/extract", async (req, res) => {
 
   let browser;
   try {
-    // Puppeteer launch config (Render/Vercel compatible)
     browser = await puppeteer.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(),
@@ -19,38 +18,41 @@ app.get("/extract", async (req, res) => {
     });
 
     const page = await browser.newPage();
+    const collected = [];
 
-    const links = [];
-
-    // Intercept network requests
-    page.on("response", async (response) => {
+    page.on("requestfinished", async (req) => {
       try {
-        const requestUrl = response.url();
-        if (requestUrl.includes("videoplayback?expire=")) {
-          links.push(requestUrl);
+        const response = await req.response();
+        if (response && response.url().includes("videoplayback?expire=")) {
+          collected.push(response.url());
         }
-      } catch {}
+      } catch (err) {}
     });
 
-    // Navigate
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+    // Navigate to page
+    await page.goto(url, { waitUntil: "domcontentloaded" });
 
-    // Wait a bit for extra requests
-    await page.waitForTimeout(10000);
+    // Race between 30 sec timeout and network collection
+    await Promise.race([
+      new Promise((resolve) => setTimeout(resolve, 30000)), // 30s max
+      new Promise(async (resolve) => {
+        // agar page idle ho jaye to resolve
+        await page.waitForNetworkIdle({ timeout: 30000 }).catch(() => {});
+        resolve();
+      }),
+    ]);
 
     await browser.close();
 
-    if (links.length === 0) {
-      return res.status(404).json({ error: "No playback links found" });
+    if (collected.length === 0) {
+      return res.status(404).json({ error: "No videoplayback URL found" });
     }
 
-    res.json({ playbackLinks: links });
+    res.json({ urls: collected });
   } catch (err) {
     if (browser) await browser.close();
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
