@@ -18,41 +18,47 @@ app.get("/extract", async (req, res) => {
     });
 
     const page = await browser.newPage();
-    const collected = [];
+    const links = new Set(); // avoid duplicates
 
-    page.on("requestfinished", async (req) => {
+    // Intercept all network requests
+    page.on("response", async (response) => {
       try {
-        const response = await req.response();
-        if (response && response.url().includes("videoplayback?expire=")) {
-          collected.push(response.url());
+        const requestUrl = response.url();
+
+        // Filter only CDN/media type links
+        if (
+          requestUrl.includes("videoplayback") ||
+          requestUrl.includes(".m3u8") ||
+          requestUrl.includes(".mpd") ||
+          requestUrl.includes(".mp4") ||
+          requestUrl.includes(".ts") ||
+          requestUrl.includes("cdn") ||
+          requestUrl.includes("media")
+        ) {
+          links.add(requestUrl);
         }
-      } catch (err) {}
+      } catch {}
     });
 
-    // Navigate to page
-    await page.goto(url, { waitUntil: "domcontentloaded" });
+    // Navigate (30 sec max)
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    // Race between 30 sec timeout and network collection
-    await Promise.race([
-      new Promise((resolve) => setTimeout(resolve, 30000)), // 30s max
-      new Promise(async (resolve) => {
-        // agar page idle ho jaye to resolve
-        await page.waitForNetworkIdle({ timeout: 30000 }).catch(() => {});
-        resolve();
-      }),
-    ]);
+    // Capture for 20s extra
+    await page.waitForTimeout(20000);
 
     await browser.close();
 
-    if (collected.length === 0) {
-      return res.status(404).json({ error: "No videoplayback URL found" });
+    if (links.size === 0) {
+      return res.status(404).json({ error: "No CDN/media links found" });
     }
 
-    res.json({ urls: collected });
+    res.json({ cdnLinks: Array.from(links) });
   } catch (err) {
     if (browser) await browser.close();
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
