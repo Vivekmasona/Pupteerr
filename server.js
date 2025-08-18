@@ -26,25 +26,20 @@ app.get("/extract", async (req, res) => {
     page.on("request", async (reqEvent) => {
       let link = reqEvent.url();
 
-      // ✅ YouTube videoplayback
-      if (link.includes("videoplayback") && link.includes("expire=")) {
-        if (!links.includes(link)) links.push(link);
-      }
-
-      // ✅ Instagram reels/posts mp4 CDN
+      // ✅ YouTube audio only (itag 140 = m4a, 251 = opus)
       if (
-        (link.includes("cdninstagram.com") || link.includes("fbcdn.net")) &&
-        link.includes(".mp4")
+        link.includes("videoplayback") &&
+        link.includes("expire=") &&
+        (link.includes("itag=140") || link.includes("itag=251"))
       ) {
-        link = link.replace(/&bytestart=\d+&byteend=\d+/g, "");
         if (!links.includes(link)) links.push(link);
       }
 
-      // ✅ Agar 4 ho gaye to close aur return
-      if (links.length >= 4 && !resolved) {
+      // ✅ Agar 2 audio links mil gaye to turant return
+      if (links.length >= 2 && !resolved) {
         resolved = true;
         await browser.close();
-        return res.json({ links: links.slice(0, 4) });
+        return res.json({ platform: "youtube", audioLinks: links });
       }
     });
 
@@ -53,15 +48,15 @@ app.get("/extract", async (req, res) => {
       timeout: 30000,
     });
 
-    // Timeout: agar 10s tak 4 link na mile to jo bhi mila bhej do
+    // Timeout: agar 10s tak audio link na mile
     setTimeout(async () => {
       if (!resolved) {
         resolved = true;
         await browser.close();
         if (links.length > 0) {
-          res.json({ links: links.slice(0, 4) });
+          res.json({ platform: "youtube", audioLinks: links });
         } else {
-          res.status(404).json({ error: "Video link not found" });
+          res.status(404).json({ error: "Audio link not found" });
         }
       }
     }, 10000);
@@ -72,5 +67,5 @@ app.get("/extract", async (req, res) => {
 });
 
 app.listen(PORT, () =>
-  console.log(`✅ Server running http://localhost:${PORT}`)
+  console.log(`✅ Server running at http://localhost:${PORT}`)
 );
