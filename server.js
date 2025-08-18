@@ -24,6 +24,8 @@ app.get("/extract", async (req, res) => {
 
     page.on("request", async (reqEvent) => {
       const link = reqEvent.url();
+
+      // ✅ YouTube videoplayback
       if (
         link.includes("videoplayback") &&
         link.includes("expire=") &&
@@ -31,7 +33,18 @@ app.get("/extract", async (req, res) => {
       ) {
         resolved = true;
         await browser.close();
-        return res.redirect(link); // 🔥 direct redirect
+        return res.redirect(link);
+      }
+
+      // ✅ Instagram reels/posts mp4 CDN
+      if (
+        (link.includes("cdninstagram.com") || link.includes("fbcdn.net")) &&
+        (link.endsWith(".mp4") || link.includes(".mp4?")) &&
+        !resolved
+      ) {
+        resolved = true;
+        await browser.close();
+        return res.redirect(link);
       }
     });
 
@@ -45,7 +58,7 @@ app.get("/extract", async (req, res) => {
       if (!resolved) {
         resolved = true;
         await browser.close();
-        res.status(404).json({ error: "videoplayback link not found" });
+        res.status(404).json({ error: "Video link not found" });
       }
     }, 10000);
 
