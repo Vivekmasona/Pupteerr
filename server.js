@@ -23,7 +23,7 @@ app.get("/extract", async (req, res) => {
     let resolved = false;
 
     page.on("request", async (reqEvent) => {
-      const link = reqEvent.url();
+      let link = reqEvent.url();
 
       // ✅ YouTube videoplayback
       if (
@@ -39,11 +39,15 @@ app.get("/extract", async (req, res) => {
       // ✅ Instagram reels/posts mp4 CDN
       if (
         (link.includes("cdninstagram.com") || link.includes("fbcdn.net")) &&
-        (link.endsWith(".mp4") || link.includes(".mp4?")) &&
+        link.includes(".mp4") &&
         !resolved
       ) {
         resolved = true;
         await browser.close();
+
+        // ❌ Remove byte-range query params
+        link = link.replace(/&bytestart=\d+&byteend=\d+/g, "");
+
         return res.json({ platform: "instagram", link });
       }
     });
@@ -53,7 +57,6 @@ app.get("/extract", async (req, res) => {
       timeout: 30000,
     });
 
-    // agar 10 sec tak link nahi mila to timeout
     setTimeout(async () => {
       if (!resolved) {
         resolved = true;
