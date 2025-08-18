@@ -33,7 +33,7 @@ app.get("/extract", async (req, res) => {
       ) {
         resolved = true;
         await browser.close();
-        return res.redirect(link);
+        return res.json({ platform: "youtube", link });
       }
 
       // ✅ Instagram reels/posts mp4 CDN
@@ -44,7 +44,7 @@ app.get("/extract", async (req, res) => {
       ) {
         resolved = true;
         await browser.close();
-        return res.redirect(link);
+        return res.json({ platform: "instagram", link });
       }
     });
 
