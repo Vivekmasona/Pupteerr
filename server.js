@@ -20,35 +20,24 @@ app.get("/extract", async (req, res) => {
 
     const page = await browser.newPage();
 
-    let resolved = false;
+    let links = [];
 
     page.on("request", async (reqEvent) => {
       let link = reqEvent.url();
 
       // ✅ YouTube videoplayback
-      if (
-        link.includes("videoplayback") &&
-        link.includes("expire=") &&
-        !resolved
-      ) {
-        resolved = true;
-        await browser.close();
-        return res.json({ platform: "youtube", link });
+      if (link.includes("videoplayback") && link.includes("expire=")) {
+        links.push({ platform: "youtube", link });
       }
 
-      // ✅ Instagram reels/posts mp4 CDN
+      // ✅ Instagram CDN video/audio
       if (
         (link.includes("cdninstagram.com") || link.includes("fbcdn.net")) &&
-        link.includes(".mp4") &&
-        !resolved
+        (link.includes(".mp4") || link.includes(".m4a"))
       ) {
-        resolved = true;
-        await browser.close();
-
-        // ❌ Remove byte-range query params
+        // clean query (remove bytestart / byteend)
         link = link.replace(/&bytestart=\d+&byteend=\d+/g, "");
-
-        return res.json({ platform: "instagram", link });
+        links.push({ platform: "instagram", link });
       }
     });
 
@@ -57,13 +46,15 @@ app.get("/extract", async (req, res) => {
       timeout: 30000,
     });
 
+    // Wait 5s to collect all media requests
     setTimeout(async () => {
-      if (!resolved) {
-        resolved = true;
-        await browser.close();
-        res.status(404).json({ error: "Video link not found" });
+      await browser.close();
+      if (links.length > 0) {
+        res.json({ success: true, links });
+      } else {
+        res.status(404).json({ error: "No video/audio links found" });
       }
-    }, 10000);
+    }, 5000);
 
   } catch (err) {
     if (browser) await browser.close();
