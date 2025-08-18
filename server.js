@@ -31,23 +31,23 @@ app.get("/extract", async (req, res) => {
       ) {
         resolved = true;
         await browser.close();
-        return res.json({ link });
+        return res.redirect(link); // 🔥 direct redirect
       }
     });
 
     await page.goto(url, {
       waitUntil: "domcontentloaded",
-      timeout: 60000,
+      timeout: 30000,
     });
 
-    // agar 20 sec tak koi link nahi mila to timeout
+    // agar 10 sec tak link nahi mila to timeout
     setTimeout(async () => {
       if (!resolved) {
         resolved = true;
         await browser.close();
         res.status(404).json({ error: "videoplayback link not found" });
       }
-    }, 20000);
+    }, 10000);
 
   } catch (err) {
     if (browser) await browser.close();
