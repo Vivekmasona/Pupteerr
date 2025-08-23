@@ -5,8 +5,10 @@ import puppeteer from "puppeteer-core";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-let browserPromise; // 🔥 global browser instance
+// 🔥 Target site set karo
+const TARGET_URL = "https://www.jiosaavn.com/";
 
+let browserPromise;
 async function getBrowser() {
   if (!browserPromise) {
     browserPromise = puppeteer.launch({
@@ -14,66 +16,80 @@ async function getBrowser() {
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
-      userDataDir: "/tmp/chrome-user-data", // important for ETXTBSY fix
+      userDataDir: "/tmp/chrome-user-data",
     });
   }
   return browserPromise;
 }
 
-app.get("/extract", async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "Valid URL required" });
-
+// Step 1: Capture how search works
+app.get("/inspect", async (req, res) => {
   try {
-    const browser = await getBrowser(); // reuse browser
+    const browser = await getBrowser();
     const page = await browser.newPage();
 
-    let resolved = false;
-    let links = [];
+    let apiCalls = [];
 
     page.on("request", (reqEvent) => {
-      let link = reqEvent.url();
-
-      if (link.includes("videoplayback") && link.includes("expire=")) {
-        if (!links.includes(link)) links.push(link);
-      }
-
-      if (
-        (link.includes("cdninstagram.com") || link.includes("fbcdn.net")) &&
-        link.includes(".mp4")
-      ) {
-        link = link.replace(/&bytestart=\d+&byteend=\d+/g, "");
-        if (!links.includes(link)) links.push(link);
-      }
-
-      if (links.length >= 4 && !resolved) {
-        resolved = true;
-        page.close(); // ✅ sirf page band karo, browser mat
-        return res.json({ links: links.slice(0, 4) });
+      const url = reqEvent.url();
+      if (url.includes("search") || url.includes("api")) {
+        apiCalls.push({ method: reqEvent.method(), url });
       }
     });
 
-    await page.goto(url, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
-    });
+    await page.goto(TARGET_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        page.close();
-        if (links.length > 0) {
-          res.json({ links: links.slice(0, 4) });
-        } else {
-          res.status(404).json({ error: "Video link not found" });
-        }
-      }
-    }, 10000);
+    // Wait a bit so site JS loads
+    await page.waitForTimeout(5000);
+
+    await page.close();
+    res.json({ apiCalls });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () =>
-  console.log(`✅ Server running http://localhost:${PORT}`)
-);
+// Step 2: Proxy actual search
+app.get("/search", async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.status(400).json({ error: "Query required" });
+
+  try {
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+
+    let results = [];
+
+    page.on("response", async (response) => {
+      try {
+        const reqUrl = response.url();
+        if (reqUrl.includes("search") || reqUrl.includes("api")) {
+          const data = await response.json().catch(() => null);
+          if (data) results.push(data);
+        }
+      } catch (e) {}
+    });
+
+    await page.goto(`${TARGET_URL}`, { waitUntil: "domcontentloaded", timeout: 30000 });
+
+    // Target site pe search box fill + submit
+    await page.type("input[type='text']", q);
+    await page.keyboard.press("Enter");
+
+    await page.waitForTimeout(5000);
+
+    await page.close();
+
+    if (results.length > 0) {
+      res.json({ query: q, results });
+    } else {
+      res.status(404).json({ error: "No results captured" });
+    }
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
