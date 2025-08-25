@@ -19,69 +19,58 @@ async function getBrowser() {
   return browserPromise;
 }
 
-app.get("/scrape", async (req, res) => {
+// Live scraper endpoint
+app.get("/live", async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: "url param required" });
 
-  try {
-    const browser = await getBrowser();
-    const page = await browser.newPage();
+  const browser = await getBrowser();
+  const page = await browser.newPage();
 
-    // Set User-Agent like real browser (important for insta/fb/twitter)
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    );
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  );
 
-    let mediaUrls = [];
+  // SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
 
-    page.on("response", async (response) => {
-      try {
-        const reqUrl = response.url();
-        const headers = response.headers();
-        const ct = headers["content-type"] || "";
+  let seen = new Set();
 
-        // Filter: only audio/video/CDN urls
-        if (
-          ct.startsWith("audio/") ||
-          ct.startsWith("video/") ||
-          reqUrl.match(/\.(mp4|m4a|mp3|aac|webm|ogg|wav|m3u8|mpd)(\?|$)/i) ||
-          reqUrl.includes("videoplayback") || // YouTube
-          reqUrl.includes("fbcdn") || // Facebook CDN
-          reqUrl.includes("twimg") || // Twitter/X
-          reqUrl.includes("instagram") || // Insta blob/cdn
-          reqUrl.includes("vimeocdn") || // Vimeo
-          reqUrl.includes("dailymotion") // Dailymotion
-        ) {
-          mediaUrls.push({
-            url: reqUrl,
-            type: ct || response.request().resourceType(),
-            status: response.status(),
-          });
+  page.on("response", async (response) => {
+    try {
+      const reqUrl = response.url();
+      const headers = response.headers();
+      const ct = headers["content-type"] || "";
+
+      // Detect audio/video
+      if (
+        ct.startsWith("audio/") ||
+        ct.startsWith("video/") ||
+        reqUrl.match(/\.(mp4|m4a|mp3|aac|webm|ogg|wav|m3u8|mpd)(\?|$)/i) ||
+        reqUrl.includes("videoplayback") ||
+        reqUrl.includes("fbcdn") ||
+        reqUrl.includes("twimg") ||
+        reqUrl.includes("instagram") ||
+        reqUrl.includes("vimeocdn") ||
+        reqUrl.includes("dailymotion")
+      ) {
+        if (!seen.has(reqUrl)) {
+          seen.add(reqUrl);
+          // send as JSON chunk
+          res.write(`data: ${JSON.stringify({ url: reqUrl, type: ct })}\n\n`);
         }
-      } catch (err) {
-        // ignore errors
       }
-    });
+    } catch {}
+  });
 
-    // goto + wait
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-    await page.waitForTimeout(15000); // extra wait for media reqs
+  // Start navigation (no timeout, keep alive)
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 0 });
 
-    await page.close();
-
-    // unique urls only
-    mediaUrls = [...new Map(mediaUrls.map((m) => [m.url, m])).values()];
-
-    res.json({
-      page: url,
-      count: mediaUrls.length,
-      media: mediaUrls,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  // Do not close response → keep alive infinitely
 });
 
 app.listen(PORT, () => {
