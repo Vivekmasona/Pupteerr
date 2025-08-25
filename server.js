@@ -1,7 +1,6 @@
 import express from "express";
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
-import path from "path";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -115,7 +114,7 @@ app.get("/live", async (req, res) => {
 
   await page.goto(target, { waitUntil: "domcontentloaded", timeout: 0 });
 
-  // Do not close -> stream continues
+  // Response kabhi end nahi karna → stream chalta rahega
 });
 
 app.listen(PORT, () => {
