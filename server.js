@@ -5,10 +5,8 @@ import puppeteer from "puppeteer-core";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🔥 Target site set karo
-const TARGET_URL = "https://www.jiosaavn.com/";
-
 let browserPromise;
+
 async function getBrowser() {
   if (!browserPromise) {
     browserPromise = puppeteer.launch({
@@ -16,80 +14,76 @@ async function getBrowser() {
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
-      userDataDir: "/tmp/chrome-user-data",
     });
   }
   return browserPromise;
 }
 
-// Step 1: Capture how search works
-app.get("/inspect", async (req, res) => {
-  try {
-    const browser = await getBrowser();
-    const page = await browser.newPage();
-
-    let apiCalls = [];
-
-    page.on("request", (reqEvent) => {
-      const url = reqEvent.url();
-      if (url.includes("search") || url.includes("api")) {
-        apiCalls.push({ method: reqEvent.method(), url });
-      }
-    });
-
-    await page.goto(TARGET_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-
-    // Wait a bit so site JS loads
-    await page.waitForTimeout(5000);
-
-    await page.close();
-    res.json({ apiCalls });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Step 2: Proxy actual search
-app.get("/search", async (req, res) => {
-  const { q } = req.query;
-  if (!q) return res.status(400).json({ error: "Query required" });
+app.get("/scrape", async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: "url param required" });
 
   try {
     const browser = await getBrowser();
     const page = await browser.newPage();
 
-    let results = [];
+    // Set User-Agent like real browser (important for insta/fb/twitter)
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+
+    let mediaUrls = [];
 
     page.on("response", async (response) => {
       try {
         const reqUrl = response.url();
-        if (reqUrl.includes("search") || reqUrl.includes("api")) {
-          const data = await response.json().catch(() => null);
-          if (data) results.push(data);
+        const headers = response.headers();
+        const ct = headers["content-type"] || "";
+
+        // Filter: only audio/video/CDN urls
+        if (
+          ct.startsWith("audio/") ||
+          ct.startsWith("video/") ||
+          reqUrl.match(/\.(mp4|m4a|mp3|aac|webm|ogg|wav|m3u8|mpd)(\?|$)/i) ||
+          reqUrl.includes("videoplayback") || // YouTube
+          reqUrl.includes("fbcdn") || // Facebook CDN
+          reqUrl.includes("twimg") || // Twitter/X
+          reqUrl.includes("instagram") || // Insta blob/cdn
+          reqUrl.includes("vimeocdn") || // Vimeo
+          reqUrl.includes("dailymotion") // Dailymotion
+        ) {
+          mediaUrls.push({
+            url: reqUrl,
+            type: ct || response.request().resourceType(),
+            status: response.status(),
+          });
         }
-      } catch (e) {}
+      } catch (err) {
+        // ignore errors
+      }
     });
 
-    await page.goto(`${TARGET_URL}`, { waitUntil: "domcontentloaded", timeout: 30000 });
-
-    // Target site pe search box fill + submit
-    await page.type("input[type='text']", q);
-    await page.keyboard.press("Enter");
-
-    await page.waitForTimeout(5000);
+    // goto + wait
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+    await page.waitForTimeout(15000); // extra wait for media reqs
 
     await page.close();
 
-    if (results.length > 0) {
-      res.json({ query: q, results });
-    } else {
-      res.status(404).json({ error: "No results captured" });
-    }
+    // unique urls only
+    mediaUrls = [...new Map(mediaUrls.map((m) => [m.url, m])).values()];
 
+    res.json({
+      page: url,
+      count: mediaUrls.length,
+      media: mediaUrls,
+    });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
