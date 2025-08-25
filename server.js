@@ -19,10 +19,9 @@ async function getBrowser() {
   return browserPromise;
 }
 
-// Live scraper endpoint
-app.get("/live", async (req, res) => {
+app.get("/liv", async (req, res) => {
   const url = req.query.url;
-  if (!url) return res.status(400).json({ error: "url param required" });
+  if (!url) return res.status(400).send("url param required");
 
   const browser = await getBrowser();
   const page = await browser.newPage();
@@ -32,10 +31,9 @@ app.get("/live", async (req, res) => {
       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   );
 
-  // SSE headers
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
+  // Response ko stream mode me rakho
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Transfer-Encoding", "chunked");
   res.flushHeaders();
 
   let seen = new Set();
@@ -46,7 +44,6 @@ app.get("/live", async (req, res) => {
       const headers = response.headers();
       const ct = headers["content-type"] || "";
 
-      // Detect audio/video
       if (
         ct.startsWith("audio/") ||
         ct.startsWith("video/") ||
@@ -60,19 +57,20 @@ app.get("/live", async (req, res) => {
       ) {
         if (!seen.has(reqUrl)) {
           seen.add(reqUrl);
-          // send as JSON chunk
-          res.write(`data: ${JSON.stringify({ url: reqUrl, type: ct })}\n\n`);
+
+          const data = { url: reqUrl, type: ct };
+          console.log("Captured:", data); // Server console me live print
+          res.write(JSON.stringify(data) + "\n"); // Client pe bhi live print
         }
       }
     } catch {}
   });
 
-  // Start navigation (no timeout, keep alive)
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 0 });
 
-  // Do not close response → keep alive infinitely
+  // Response ko kabhi end na karo → live stream chalta rahe
 });
-
+ 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
