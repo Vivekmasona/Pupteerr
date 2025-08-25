@@ -1,6 +1,7 @@
 import express from "express";
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
+import path from "path";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,9 +20,55 @@ async function getBrowser() {
   return browserPromise;
 }
 
-app.get("/liv", async (req, res) => {
-  const url = req.query.url;
-  if (!url) return res.status(400).send("url param required");
+// ---------- FRONTEND PAGE ----------
+app.get("/", (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Media Sniffer</title>
+  <style>
+    body { font-family: monospace; background:#111; color:#0f0; padding:20px; }
+    #log { white-space: pre-wrap; }
+    input { padding:5px; width:60%; }
+    button { padding:6px; }
+  </style>
+</head>
+<body>
+  <h2>🎵 Live Media URL Sniffer</h2>
+  <form id="form">
+    <input type="text" id="url" placeholder="Enter any page URL (YouTube, Insta, FB...)" required>
+    <button type="submit">Start Sniffing</button>
+  </form>
+  <hr>
+  <div id="log"></div>
+
+  <script>
+    const form = document.getElementById("form");
+    const log = document.getElementById("log");
+
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      log.innerHTML = "Sniffing started...<br>";
+
+      const url = document.getElementById("url").value;
+      const evtSrc = new EventSource("/live?url=" + encodeURIComponent(url));
+
+      evtSrc.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        log.innerHTML += data.url + "\\n";
+      };
+    });
+  </script>
+</body>
+</html>
+  `);
+});
+
+// ---------- BACKEND LIVE SCRAPER ----------
+app.get("/live", async (req, res) => {
+  const target = req.query.url;
+  if (!target) return res.status(400).send("url param required");
 
   const browser = await getBrowser();
   const page = await browser.newPage();
@@ -31,9 +78,10 @@ app.get("/liv", async (req, res) => {
       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   );
 
-  // Response ko stream mode me rakho
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Transfer-Encoding", "chunked");
+  // SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
   let seen = new Set();
@@ -47,7 +95,7 @@ app.get("/liv", async (req, res) => {
       if (
         ct.startsWith("audio/") ||
         ct.startsWith("video/") ||
-        reqUrl.match(/\.(mp4|m4a|mp3|aac|webm|ogg|wav|m3u8|mpd)(\?|$)/i) ||
+        reqUrl.match(/\.(mp4|m4a|mp3|aac|webm|ogg|wav|m3u8|mpd)(\\?|$)/i) ||
         reqUrl.includes("videoplayback") ||
         reqUrl.includes("fbcdn") ||
         reqUrl.includes("twimg") ||
@@ -57,20 +105,19 @@ app.get("/liv", async (req, res) => {
       ) {
         if (!seen.has(reqUrl)) {
           seen.add(reqUrl);
-
           const data = { url: reqUrl, type: ct };
-          console.log("Captured:", data); // Server console me live print
-          res.write(JSON.stringify(data) + "\n"); // Client pe bhi live print
+          console.log("Captured:", data); // server console
+          res.write("data: " + JSON.stringify(data) + "\\n\\n"); // frontend
         }
       }
     } catch {}
   });
 
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 0 });
+  await page.goto(target, { waitUntil: "domcontentloaded", timeout: 0 });
 
-  // Response ko kabhi end na karo → live stream chalta rahe
+  // Do not close -> stream continues
 });
- 
+
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log("Server running at http://localhost:" + PORT);
 });
